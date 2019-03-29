@@ -1,22 +1,17 @@
 package com.utd.distributed.util;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public class Message {
-	private int fromId;
-	private long sentRound;
+	public List<Integer> val;
+    public List<Integer> level;
+    public int key;
 
-	public int getFromId() {
-		return fromId;
-	}
+    public Message(int key, ArrayList<Integer> val, ArrayList<Integer> level) {
 
-	public void setFromId(int fromID) {
-		this.fromId = fromID;
-	}
-
-	public long getSentRound() {
-		return sentRound;
-	}
-
-	public void setSentRound(long sentRound) {
-		this.sentRound = sentRound;
-	}
+        this.val = val;
+        this.key = key;
+        this.level = level;
+    }
 }

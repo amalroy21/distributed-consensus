@@ -16,8 +16,7 @@ import java.util.Properties;
 public class Main {
 	
 	public static Process[] p;
-	public static int ProcessCount;
-	public static int source;
+	public static int processCount;
 	
     public static void main(String[] args) {
 
@@ -25,27 +24,21 @@ public class Main {
             String filePath = "config.properties";
             Properties prop = ReadPropertyFile.readProperties(filePath);
             
-            System.out.println("-------Distributed Algorithm SynchBFS-------");
-            ProcessCount = Integer.parseInt(prop.getProperty("numberofProcess"));
-            System.out.println("No of Process : "+ProcessCount);
-            int root = Integer.parseInt(prop.getProperty("rootNode"));
-            System.out.println("Process "+ root + " is the root process");
-            p = new Process[ProcessCount];
-			Master master = new Master(ProcessCount,root);
-			String[] edgeList = prop.getProperty("edgeList").split(",");
-			int[][] neighbors = new int[ProcessCount][ProcessCount];
-			
-			for(int i = 0; i < ProcessCount; i++){
-				for(int j = 0; j < ProcessCount; j++){
-					neighbors[i][j] = Integer.parseInt(edgeList[i].substring(j, j+1));
-				}
-				p[i] = new Process(i,root,neighbors[i],master);
+            System.out.println("-------Distributed Consensus Algorithm-------");
+            processCount = Integer.parseInt(prop.getProperty("processCount"));
+            int dropCounter = Integer.parseInt(prop.getProperty("dropCounter"));
+            int[] values = buildList(prop.getProperty("values"));
+            int rounds = Integer.parseInt(prop.getProperty("rounds"));
+            p = new Process[processCount];
+			Master master = new Master(processCount);
+			for(int i = 0; i < processCount; i++){
+				p[i] = new Process(i,master,values[i],rounds,dropCounter,processCount);
 			}
 			
 			master.setProcesses(p);
 			Thread t = new Thread(master);
 			t.start();
-			for(int i = 0; i < ProcessCount; i++){
+			for(int i = 0; i < processCount; i++){
 				Thread tempThread = new Thread(p[i]);
 				tempThread.start();
 			}
@@ -54,4 +47,15 @@ public class Main {
             ex.printStackTrace();
         }
     }
+    
+	public static int[] buildList(String list) {
+			
+		String[] strList = list.split(",");
+		int[] arrayList = new int[strList.length];
+		int i = 0;
+		while(i<strList.length) {
+			arrayList[i] = Integer.parseInt(strList[i++]);
+		}
+		return arrayList;
+	}
 }

@@ -1,10 +1,10 @@
 package com.utd.distributed.process;
 
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Collections;
 import java.util.LinkedList;
-import java.util.Map;
 import java.util.Queue;
+import java.util.Random;
 
 import com.utd.distributed.master.Master;
 import com.utd.distributed.util.Message;
@@ -12,34 +12,36 @@ import com.utd.distributed.util.Message;
 public class Process implements Runnable{
 
 	private Master master;
-	private int root;
-    private int id;
-    private ArrayList<Integer> neighbors;
+	public int id;
     private Process[] p;
-    private int parent;
     private volatile String messageFromMaster = "";
     private int round = 0;
 	private boolean processDone = false;
-	private boolean msgSent = false;
-	private HashMap<Integer,String> status = new HashMap<Integer,String>();
+	private int maxRound ;
+	private int key;
+	public ArrayList<Integer> val;
+    public ArrayList<Integer> level;
+	private int processCount;
+	private int dropMessageCounter;
+	private int messageNumber;
+	private int decision;
+	private boolean decisionDone;
 	
 	private volatile Queue<Message> messageQueue = new LinkedList<>();
-	private volatile boolean marked = false;
-    
-	public Process(int id, int root,int[] edgeList,Master master) {
+	public Process(int id,Master master,int initialValue,int rounds,int dropCounter,int processCount) {
 		this.id = id;
-		this.root = root;
-		int count = 0;
-		this.neighbors = new ArrayList<Integer>();
 		this.master = master;
-		for(Integer i : edgeList){
-			if(i == 1)
-				neighbors.add(count); 
-			count++;
+		this.maxRound = rounds;
+		this.dropMessageCounter = dropCounter;
+		this.processCount = processCount;
+		this.val = new ArrayList<>(Collections.nCopies(processCount, -1));
+		this.level = new ArrayList<>(Collections.nCopies(processCount, 0));
+		this.val.set(this.id, initialValue);
+		this.key = -1;
+		if(id == 0) {
+			Random rand = new Random();
+            this.key = rand.nextInt(maxRound-1) + 1;
 		}
-		
-		//To reset all the acknowledgement status for all its neighbors
-		acknowledgeStatus(id,"",true);
 	}
     
 	public void setProcessNeighbors(Process p[]) {
@@ -48,45 +50,52 @@ public class Process implements Runnable{
 
 	@Override
 	public void run() {
-		// TODO Auto-generated method stub
+
 		master.roundCompletionForProcess(id);
-		//System.out.println("Process "+id+" ready");
-		while(!processDone){
-			
-			if(getMessageFromMaster().equals("Initiate")){
-				//System.out.println("Process "+id+" entered initiate");
-				setMessageFromMaster("");
-				if(id == root){
-					//System.out.println("Root is "+ id);
-					sendMessages();
-					this.msgSent = true;
-					this.marked = true;
-					this.parent = id ;
-				}
-				master.roundCompletionForProcess(id);	
-			}else if (getMessageFromMaster().equals("StartRound")){
-				
-				round++;
-				//System.out.println("Process "+id+" entered start round"+round);
-				setMessageFromMaster("");
-				
-				//System.out.println("If process:" + id + "is marked :"+marked);
-				if(!this.msgSent && marked) {
-					sendMessages();
-					msgSent=true;
-				}
-				receiveMessages();
-				master.roundCompletionForProcess(id);
-			}else if(getMessageFromMaster().equals("SendParent")){
-								
-				setMessageFromMaster("");
-				master.assignParents(id,parent);
-				master.roundCompletionForProcess(id);
-			}else if(getMessageFromMaster().equals("MasterDone")){
-				// Terminating the Algorithm
-				processDone = true;
-			}
+		try {
+			while (!processDone) {
+				if(getMessageFromMaster().equals("Initiate")){
+					//System.out.println("Process "+id+" Initiated");
+					setMessageFromMaster("");
+					master.roundCompletionForProcess(id);	
+				}else 
+	            if (getMessageFromMaster().equals("StartRound")) {
+	            	setMessageFromMaster("");
+	            	//System.out.println("Process "+id+" Entered Round"+round);
+	                if(round < maxRound) {
+	                    if (round == 0 && this.id == 0) {
+	                        Random rand = new Random();
+	                        //this.key = rand.nextInt(maxRound-1) + 1;
+	                        //this.key = 6;
+	                    } else 
+	                    	if(round !=0) {
+	                    		this.processQueue();
+	                    	}
+	                
+	                    round++;
+	                    Message message = new Message(this.key, this.val, this.level);
+	                    for (int i = 0,count = 1; i < processCount; i++){
+	                    	if(i!=this.id){
+	                        	Thread.sleep(1000);
+	                            sendMessage(message, i,count++);
+	                        }
+	                    }
+	                    
+	                }
+	                else {
+	                	processDone = true;
+	                	this.processDecision();
+	                }
+	                master.roundCompletionForProcess(id);	
+	            }
+	        }
+		} catch (InterruptedException e) {
+			e.printStackTrace();
 		}
+	}
+	
+	public void setRoundNumber(){
+		this.round++;
 	}
 	
 	public String getMessageFromMaster(){
@@ -98,91 +107,59 @@ public class Process implements Runnable{
 		this.messageFromMaster = messageFromMaster;
 	}
 	
-	private void sendMessages(){
-		Message message = new Message();
-		message.setFromId(this.id);
-		message.setSentRound(round);
-		for (int n : neighbors) {
-			if(n != id) {
-				p[n].modifyQueue(message, "insert");
-			}
-		}
+	 public synchronized void sendMessage(Message m,int receiverId,int count){
+		messageNumber = ((round)*(processCount)*(processCount-1))+((id*(processCount-1))+count);
+	    //System.out.println("Message from :"+id+" Receiver :"+receiverId+" Message number :"+messageNumber);
+		if(messageNumber%dropMessageCounter != 0) {
+	        send(m, p[receiverId]);
+	    }
+	    else
+	        System.out.println("Message Number:" + messageNumber +" From process:"+id +" to process:" +receiverId+" was dropped!");
+	 }
+	 
+	 private void send(Message m , Process p){
+		 p.putMessage(m);
+	 }
+	 
+	public void putMessage(Message m){
+		 messageQueue.add(m);
+    }
+		
+    public synchronized void processQueue() {
+       if(!messageQueue.isEmpty()) {
+           while (!messageQueue.isEmpty()) {
+               Message m = messageQueue.poll();
+               if(key==-1 && m.key!=-1) {
+                   this.key = m.key;
+               }
+               for (int i = 0; i < processCount; i++) {
+                   if (val.get(i) == -1 && (m.val.get(i)  != -1)) {
+                       val.set(i,m.val.get(i));
+                   }
+                   if (level.get(i) < m.level.get(i)) {
+                       level.set(i, m.level.get(i));
+                   }
+               }
+           }
+       level.set(id,Collections.min(level)+1);
+       }
 	}
-		
-	// Processing messages in the Queue 
-	private boolean receiveMessages(){
-		
-		Message msg = modifyQueue(null, "poll");
-		while(msg != null) {
-			if(this.marked == false) {
-				//System.out.println("message not null for ID" + id);
-				this.parent = msg.getFromId();
-				//System.out.println("Parent of "+ id + " is :" + parent);
-				p[id].acknowledgeStatus(id, "Known", false);
-				this.marked = true;
-			}else {
-				p[msg.getFromId()].acknowledgeStatus(id, "Reject", false);
-			}
-			msg = new Message();
-			msg = modifyQueue(null,"poll");
+    
+	public void processDecision() {
+		int bitOp = 1;
+		for(Integer v:val) {
+			bitOp = bitOp & v; 
 		}
-		if (acknowledge(id)) {
-			//System.out.print("Acknowledged process is "+id+" parent is "+parent);
-			if(parent == id){
-				Master.treeDone = true;
-				//System.out.println("Tree Done");
-			}
-			else {
-				//System.out.println("Acknoledge done for Id"+id);
-				p[parent].acknowledgeStatus(id, "Done", false);
-			}
-		}
-		return marked;
+	    decision = (key != -1 && level.get(id) >= key && bitOp == 1) ? 1 : 0;
+	    decisionDone = true;
+	    System.out.println("Process "+id + " decision is "+decision+" and values are :"+val.toString() + " and Levels are :"+level.toString() + " and key is:"+key);
 	}
-
-		
-		/* Check if all the child processes are done and all the acknowledgement
-		 * messages are collected back.
-		 * * */
-		public synchronized boolean acknowledge(int id){
-			for (Map.Entry<Integer, String> m : status.entrySet()) {
-				if (m.getKey() != parent && m.getValue().equals("Unknown")) {
-					return false;
-				}
-			}
-			return true;
-		}
-		
-		
-		/*
-		 * Checks whether a process still need to send explore message or not
-		 * */
-		public synchronized boolean acknowledgeStatus(int id, String reply, boolean reset){
-			if(reset){
-				for(Integer val : neighbors){
-						status.put(val,"Unknown");
-				}
-			}else{
-				status.put(id, reply);
-			}
-			return true;
-		}
-		
-		/*
-		 * Insert, Poll or reset the message Queue
-		 * */
-		public synchronized Message modifyQueue(Message msg, String action){
-			
-			if("insert".equalsIgnoreCase(action)) {
-				messageQueue.add(msg);
-			}
-			else if("poll".equalsIgnoreCase(action)) {
-				if (!messageQueue.isEmpty())
-					return messageQueue.poll();
-			}
-			else if("reset".equalsIgnoreCase(action)) {
-				while(!messageQueue.isEmpty()) ;
-			}
-			return null;
-		}
+	
+	public boolean getDecisionStatus() {
+		return decisionDone;
+	}
+	
+	public int getDecision() {
+		return decision;
+	}
 }
